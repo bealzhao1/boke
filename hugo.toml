@@ -1,4 +1,4 @@
-baseURL = '/'
+baseURL = 'https://bealzhao1.github.io/boke/'
 locale = 'zh-cn'
 title = 'bealzhao 博客'
 theme = 'PaperMod'
