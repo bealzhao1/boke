@@ -124,7 +124,7 @@ jobs:
       - name: Verify rollout
         run: |
           set -euo pipefail
-          if kubectl -n hugo rollout status deployment/boke --timeout=180s; then
+          if kubectl -n hugo rollout status deployment/boke --timeout=600s; then
             echo "::notice::✅ rollout 完成"
             kubectl -n hugo get pods,svc,ingress
           else
