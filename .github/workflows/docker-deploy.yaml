@@ -107,6 +107,10 @@ jobs:
           kubectl apply -f deploy/namespace.yaml
 
           # 4) ghcr 拉取凭证（用长期有效的 PAT）
+          if [ -z "${{ secrets.GHCR_PAT }}" ]; then
+            echo "::error::GHCR_PAT secret 为空。请到 Settings → Secrets and variables → Actions → GHCR_PAT 配置一个带 read:packages 权限的 Personal Access Token（长期有效）。"
+            exit 1
+          fi
           kubectl create secret docker-registry ghcr-secret \
             --docker-server=ghcr.io \
             --docker-username="${{ github.actor }}" \
