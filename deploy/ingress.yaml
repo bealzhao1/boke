@@ -20,7 +20,9 @@ spec:
   #       - blog.bealzhao.com
   #     secretName: boke-tls
   rules:
-    - host: blog.bealzhao.com
+    # 需要限定域名时解开下面这行注释。
+    # ⚠️ 行首的 "-" 是列表项标记，必须保留；否则 rules 会变成对象而不是数组，apply 会失败。
+    - # host: blog.bealzhao.com
       http:
         paths:
           - path: /blog
