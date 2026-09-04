@@ -30,4 +30,4 @@ spec:
               service:
                 name: boke
                 port:
-                  number: 80
+                  number: 9090
