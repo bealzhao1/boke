@@ -123,5 +123,30 @@ jobs:
 
       - name: Verify rollout
         run: |
-          kubectl -n hugo rollout status deployment/boke --timeout=180s
-          kubectl -n hugo get pods,svc,ingress
+          set -euo pipefail
+          if kubectl -n hugo rollout status deployment/boke --timeout=180s; then
+            echo "::notice::✅ rollout 完成"
+            kubectl -n hugo get pods,svc,ingress
+          else
+            echo "::error::rollout 超时，开始收集诊断信息..."
+            echo ""
+            echo "===== 1) Pods 状态 ====="
+            kubectl -n hugo get pods -o wide || true
+            echo ""
+            echo "===== 2) Deployment 详情 ====="
+            kubectl -n hugo describe deployment/boke || true
+            echo ""
+            echo "===== 3) Pod 事件（含镜像拉取错误原因） ====="
+            kubectl -n hugo describe pods || true
+            echo ""
+            echo "===== 4) 最近 events ====="
+            kubectl -n hugo get events --sort-by=.lastTimestamp || true
+            echo ""
+            echo "===== 5) 各 Pod 日志（最近 50 行） ====="
+            for p in $(kubectl -n hugo get pods -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+              echo "--- ${p} ---"
+              kubectl -n hugo logs --tail=50 "${p}" --all-containers=true || true
+              echo ""
+            done
+            exit 1
+          fi
