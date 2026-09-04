@@ -1,4 +1,5 @@
-baseURL = 'https://bealzhao1.github.io/boke/'
+baseURL = '/'
+# 生产部署时由 CI 通过 --build-arg BASE_URL 传入服务器真实地址（见 docker-deploy.yaml 的 vars.BASE_URL）
 locale = 'zh-cn'
 title = 'bealzhao 博客'
 theme = 'PaperMod'
