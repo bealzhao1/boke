@@ -66,9 +66,27 @@ jobs:
 
       - name: Configure kubeconfig
         run: |
+          set -euo pipefail
           mkdir -p "$HOME/.kube"
           printf '%s' "${{ secrets.KUBECONFIG }}" > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
+
+          # 校验：secret 不能为空
+          if [ ! -s "$HOME/.kube/config" ]; then
+            echo "::error::KUBECONFIG secret 为空或未配置。请到 Settings → Secrets and variables → Actions → KUBECONFIG 粘贴 kubeconfig 完整内容。"
+            exit 1
+          fi
+
+          # 校验：能解析出 cluster 且 server 不是本机默认地址
+          SERVER="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)"
+          echo "目标 server: ${SERVER:-<未解析到>}"
+          case "${SERVER}" in
+            *localhost*|*127.0.0.1*|"")
+              echo "::error::kubeconfig 的 server 仍是本机地址或未解析到。请把 /etc/rancher/k3s/k3s.yaml 里的 server 改成公网地址（如 https://<公网IP>:6443）后再粘贴，并确保 k3s 安装时加了 --tls-san。"
+              exit 1
+              ;;
+          esac
+
           kubectl version --client --output=yaml
 
       - name: Deploy to cluster
