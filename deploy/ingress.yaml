@@ -3,21 +3,28 @@ kind: Ingress
 metadata:
   name: boke
   namespace: hugo
+  labels:
+    app.kubernetes.io/name: boke
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-    # 允许在 path 中使用正则
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    # 转发前剥离 /blog 前缀：/blog/css/style.css -> /css/style.css
-    # 因为容器内静态文件在站点根目录，不剥离会 404
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Traefik 入口：web = HTTP(80)
+    # 若要启用 HTTPS，改为 web,websecure 并配合下面的 tls 段
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # 剥离 /blog 前缀的中间件（定义在 deploy/middleware.yaml）
+    # 引用格式固定为：<namespace>-<name>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: hugo-strip-blog@kubernetescrd
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
+  # 启用 HTTPS 时解开下面注释，并确保 hugo 命名空间里有对应的 TLS secret
+  # tls:
+  #   - hosts:
+  #       - blog.bealzhao.com
+  #     secretName: boke-tls
   rules:
     - host: blog.bealzhao.com
       http:
         paths:
-          - path: /blog(/|$)(.*)
-            pathType: ImplementationSpecific
+          - path: /blog
+            pathType: Prefix
             backend:
               service:
                 name: boke

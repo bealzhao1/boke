@@ -118,7 +118,10 @@ jobs:
             --namespace=hugo \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          # 5) 部署应用
+          # 5) Traefik 中间件（剥离 /blog 前缀，必须先于 ingress 创建）
+          kubectl apply -f deploy/middleware.yaml
+
+          # 6) 部署应用
           kubectl apply -f deploy/deployment.yaml -f deploy/service.yaml -f deploy/ingress.yaml
 
       - name: Verify rollout

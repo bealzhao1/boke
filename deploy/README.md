@@ -74,13 +74,23 @@ sudo cat /etc/rancher/k3s/k3s.yaml
 
 ## 三、集群里要准备的东西
 
-### 1. 安装 nginx ingress controller
+### 1. 确认 Traefik 可用（k3s 自带，无需安装）
 
-k3s 默认的 ingress 是 Traefik，本项目用的 `ingressClassName: nginx`，需要额外装 ingress-nginx：
+本项目用 k3s 自带的 **Traefik** 作为 ingress controller（`ingressClassName: traefik`），
+和 shiling 服务保持一致，不需要再装 ingress-nginx。
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.2/deploy/static/provider/baremetal/deploy.yaml
+# 确认 Traefik 在运行
+kubectl -n kube-system get pods -l app.kubernetes.io/name=traefik
+
+# 确认 Traefik 的 middleware CRD 版本（决定 middleware.yaml 用哪个 apiVersion）
+kubectl get crd middlewares.traefik.io middlewares.traefik.containo.us
 ```
+
+> `deploy/middleware.yaml` 里的 `strip-blog` 中间件负责剥掉 `/blog` 前缀
+> （`/blog/css/style.css` → `/css/style.css`），必须和 ingress 在同一个 namespace。
+> 如果 apply 报 `no matches for kind "Middleware"`，把 apiVersion 换成另一个即可：
+> Traefik v3 用 `traefik.io/v1alpha1`，v2 用 `traefik.containo.us/v1alpha1`。
 
 ### 2. 域名解析
 
