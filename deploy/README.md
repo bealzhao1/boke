@@ -20,8 +20,25 @@
 
 | 名称 | 值 | 说明 |
 |------|-----|------|
-| `BASE_URL` | `https://blog.bealzhao.com/` | 编译时注入 hugo 的 baseURL |
+| `BASE_URL` | `https://blog.bealzhao.com/blog/` | 编译时注入 hugo 的 baseURL，**必须带 `/blog/` 子路径**，见下方说明 |
 | `BLOG_HOST` | `blog.bealzhao.com` | Ingress 的域名（可选，不配则用 ingress.yaml 里写死的值） |
+
+### ⚠️ 关于 `/blog` 子路径（重要）
+
+站点挂在 `/blog` 下，靠 Ingress 注解把前缀剥掉后再转发给 Pod：
+
+```
+浏览器请求  https://blog.bealzhao.com/blog/css/style.css
+   ↓ 匹配 /blog(/|$)(.*)，rewrite-target: /$2
+转发给 Pod  /css/style.css
+   ↓
+Nginx 返回  /usr/share/nginx/html/css/style.css
+```
+
+**`BASE_URL` 必须带上 `/blog/`**，否则 Hugo 生成的链接是 `/css/style.css`，
+浏览器会去请求 `https://blog.bealzhao.com/css/style.css`，Ingress 无此规则 → 404。
+
+访问地址：https://blog.bealzhao.com/blog/
 
 ## 二、怎么拿到 kubeconfig（在 k3s 服务器上）
 

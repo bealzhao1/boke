@@ -5,14 +5,19 @@ metadata:
   namespace: hugo
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # 允许在 path 中使用正则
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # 转发前剥离 /blog 前缀：/blog/css/style.css -> /css/style.css
+    # 因为容器内静态文件在站点根目录，不剥离会 404
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
   ingressClassName: nginx
   rules:
     - host: blog.bealzhao.com
       http:
         paths:
-          - path: /
-            pathType: Prefix
+          - path: /blog(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: boke
