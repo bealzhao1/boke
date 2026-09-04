@@ -11,7 +11,7 @@
 
 | 名称 | 值 |
 |------|-----|
-| `KUBECONFIG` | 你 k3s 集群的 kubeconfig 完整内容（见下方「怎么拿到 kubeconfig」） |
+| `KUBE_CONFIG` | 你 k3s 集群的 kubeconfig 完整内容（见下方「怎么拿到 kubeconfig」） |
 | `GHCR_PAT` | 一个 Personal Access Token，勾选 `read:packages`（用于集群拉取私有镜像，**必须长期有效**） |
 
 > 为什么用 PAT 而不是 `GITHUB_TOKEN`：`GITHUB_TOKEN` 每次运行结束就失效，集群节点之后重启/扩容时拉镜像会 401，所以用长期 PAT。
@@ -67,7 +67,7 @@ sudo cat /etc/rancher/k3s/k3s.yaml
    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --tls-san <你的公网IP或域名>" sh -
    ```
 
-   最后把完整的 kubeconfig 内容整个粘到 `KUBECONFIG` secret 里。
+   最后把完整的 kubeconfig 内容整个粘到 `KUBE_CONFIG` secret 里。
 
 3. **放行 6443 端口**：安全组/防火墙要允许 GitHub Actions 的出口 IP 访问 6443。
    更安全的做法是用内网穿透或只对特定 IP 开放，避免裸奔暴露 API server。
