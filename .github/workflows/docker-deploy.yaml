@@ -1,4 +1,4 @@
-name: Build and Deploy to K8s
+name: Build and Deploy to Nginx
 
 on:
   push:
@@ -7,149 +7,76 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: k8s-deploy
+  group: nginx-deploy
   cancel-in-progress: false
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image: ${{ steps.image.outputs.image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Resolve image tag
-        id: image
-        run: echo "image=${REGISTRY}/${IMAGE_NAME,,}:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push image
+      - name: Build Hugo image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          platforms: linux/amd64
-          tags: |
-            ${{ steps.image.outputs.image }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          push: false
+          load: true
+          tags: boke-builder
+          # boke 部署在 https://bealzhao.cn/blog/ 子路径（根路径 / 是其他站点）。
+          # BASE_URL 必须带上 /blog/，Hugo 才会生成 /blog/css/... 这类带前缀的链接；
+          # 若不带，浏览器会请求 /css/...，nginx 找不到文件 → 404。
           build-args: |
             BASE_URL=${{ vars.BASE_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure kubeconfig
+      - name: Export static site (public/)
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.kube"
-          printf '%s' "${{ secrets.KUBE_CONFIG }}" > "$HOME/.kube/config"
-          chmod 600 "$HOME/.kube/config"
+          rm -rf public
+          mkdir -p public
+          docker run --rm -v "$PWD/public:/out" boke-builder cp -r /src/public/. /out/
+          test -f public/index.html \
+            && echo "public/index.html 生成成功" \
+            || { echo "::error::public/index.html 未生成，Hugo 构建可能失败"; exit 1; }
 
-          # 校验：secret 不能为空
-          if [ ! -s "$HOME/.kube/config" ]; then
-            echo "::error::KUBE_CONFIG secret 为空或未配置。请到 Settings → Secrets and variables → Actions → KUBE_CONFIG 粘贴 kubeconfig 完整内容。"
-            exit 1
-          fi
-
-          # 校验：能解析出 cluster 且 server 不是本机默认地址
-          SERVER="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)"
-          echo "目标 server: ${SERVER:-<未解析到>}"
-          case "${SERVER}" in
-            *localhost*|*127.0.0.1*|"")
-              echo "::error::kubeconfig 的 server 仍是本机地址或未解析到。请把 /etc/rancher/k3s/k3s.yaml 里的 server 改成公网地址（如 https://<公网IP>:6443）后再粘贴，并确保 k3s 安装时加了 --tls-san。"
-              exit 1
-              ;;
-          esac
-
-          kubectl version --client --output=yaml
-
-      - name: Deploy to cluster
+      - name: Deploy to server nginx via rsync
         env:
-          IMAGE: ${{ needs.build.outputs.image }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          WEBROOT: ${{ vars.SERVER_WEBROOT }}
         run: |
           set -euo pipefail
 
-          # 1) 注入真实镜像 tag（ghcr.io/<owner>/<repo>:<sha>）
-          sed -i "s|image: .*|image: ${IMAGE}|" deploy/deployment.yaml
+          # ---- 配置校验 ----
+          [ -n "$SSH_HOST" ] || { echo "::error::缺少 secret: SSH_HOST（服务器 IP 或域名）"; exit 1; }
+          [ -n "$SSH_USER" ] || { echo "::error::缺少 secret: SSH_USER（SSH 用户名）"; exit 1; }
+          [ -n "$SSH_KEY" ] || { echo "::error::缺少 secret: SSH_KEY（SSH 私钥完整内容）"; exit 1; }
+          [ -n "$WEBROOT" ] || { echo "::error::缺少 variable: SERVER_WEBROOT（nginx Pod hostPath 卷的宿主机目录，如 /data/nginx-blog）"; exit 1; }
 
-          # 2) 可选：从 GitHub Variables 注入域名
-          if [ -n "${{ vars.BLOG_HOST }}" ]; then
-            sed -i "s|host: .*|host: ${{ vars.BLOG_HOST }}|" deploy/ingress.yaml
-          fi
+          # ---- SSH 准备 ----
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          # 3) 命名空间
-          kubectl apply -f deploy/namespace.yaml
+          # ---- 同步静态文件到服务器 nginx hostPath 卷目录 ----
+          # SERVER_WEBROOT = nginx Pod 挂载 /usr/share/nginx/html/blog 的宿主机目录（见 deploy/README.md）
+          # --delete：删除服务器上已不存在的旧文件，该目录专属于 boke，可安全清理
+          echo "同步 public/ → ${SSH_USER}@${SSH_HOST}:${WEBROOT}/"
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            "$PWD/public/" "${SSH_USER}@${SSH_HOST}:${WEBROOT}/"
 
-          # 4) ghcr 拉取凭证（用长期有效的 PAT）
-          if [ -z "${{ secrets.GHCR_PAT }}" ]; then
-            echo "::error::GHCR_PAT secret 为空。请到 Settings → Secrets and variables → Actions → GHCR_PAT 配置一个带 read:packages 权限的 Personal Access Token（长期有效）。"
-            exit 1
-          fi
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=ghcr.io \
-            --docker-username="${{ github.actor }}" \
-            --docker-password="${{ secrets.GHCR_PAT }}" \
-            --namespace=hugo \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-          # 5) Traefik 中间件（剥离 /blog 前缀，必须先于 ingress 创建）
-          kubectl apply -f deploy/middleware.yaml
-
-          # 6) 部署应用
-          kubectl apply -f deploy/deployment.yaml -f deploy/service.yaml -f deploy/ingress.yaml
-
-      - name: Verify rollout
-        run: |
-          set -euo pipefail
-          if kubectl -n hugo rollout status deployment/boke --timeout=600s; then
-            echo "::notice::✅ rollout 完成"
-            kubectl -n hugo get pods,svc,ingress
-          else
-            echo "::error::rollout 超时，开始收集诊断信息..."
-            echo ""
-            echo "===== 1) Pods 状态 ====="
-            kubectl -n hugo get pods -o wide || true
-            echo ""
-            echo "===== 2) Deployment 详情 ====="
-            kubectl -n hugo describe deployment/boke || true
-            echo ""
-            echo "===== 3) Pod 事件（含镜像拉取错误原因） ====="
-            kubectl -n hugo describe pods || true
-            echo ""
-            echo "===== 4) 最近 events ====="
-            kubectl -n hugo get events --sort-by=.lastTimestamp || true
-            echo ""
-            echo "===== 5) 各 Pod 日志（最近 50 行） ====="
-            for p in $(kubectl -n hugo get pods -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
-              echo "--- ${p} ---"
-              kubectl -n hugo logs --tail=50 "${p}" --all-containers=true || true
-              echo ""
-            done
-            exit 1
-          fi
+          # ---- 远程校验 ----
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "test -f ${WEBROOT}/index.html && echo '::notice::部署完成: ${WEBROOT}/index.html 存在' || { echo '::error::部署后 index.html 不存在'; exit 1; }"

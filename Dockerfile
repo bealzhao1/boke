@@ -1,5 +1,12 @@
-# ============ 阶段一：构建 Hugo 静态站点 ============
-FROM ubuntu:24.04 AS builder
+# ============ 构建 Hugo 静态站点 ============
+# 该镜像只负责生成静态文件，不再内置运行环境：
+# 博客由服务器上已有的 nginx 托管，构建产物通过 docker run 导出后同步到 nginx webroot。
+#
+# 本地用法：
+#   docker build -t boke-builder --build-arg BASE_URL=https://blog.example.com/ .
+#   docker run --rm -v "$PWD/public:/out" boke-builder cp -r /src/public/. /out/
+# 构建产物输出目录：/src/public
+FROM ubuntu:24.04
 
 ARG HUGO_VERSION=0.165.0
 
@@ -19,13 +26,3 @@ COPY . .
 # 未传该参数时使用 hugo.toml 里配置的 baseURL
 ARG BASE_URL=""
 RUN hugo --gc --minify ${BASE_URL:+--baseURL "$BASE_URL"}
-
-# ============ 阶段二：用 Nginx 托管静态文件 ============
-FROM nginx:1.27-alpine
-
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /src/public /usr/share/nginx/html
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
