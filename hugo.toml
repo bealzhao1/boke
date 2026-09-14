@@ -8,6 +8,9 @@ hasCJKLanguage = true
 
 [params]
   env = 'production'
+  # PaperMod 首页只列出 mainSections 指定栏目下的文章；不指定时 Hugo
+  # 默认取文章数最多的 section，并列时会漏掉部分栏目
+  mainSections = ['micro-service', 'tools']
   defaultTheme = 'light'
   DateFormat = '2006-01-02'
   ShowReadingTime = true
